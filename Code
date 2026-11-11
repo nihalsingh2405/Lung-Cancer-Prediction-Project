@@ -1,0 +1,147 @@
+
+# Lung Cancer Prediction Using Machine Learning
+# Algorithm: Support Vector Machine (SVM)
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
+from sklearn.svm import SVC
+from sklearn.metrics import (
+    accuracy_score,
+    classification_report,
+    confusion_matrix
+)
+
+# 1. Load Dataset
+data = pd.read_csv("dataset/lung_cancer.csv")
+
+print("Dataset Loaded Successfully")
+print(data.head())
+
+# 2. Clean Column Names
+data.columns = data.columns.str.strip()
+
+# Remove unnecessary index columns
+data = data.loc[:, ~data.columns.str.contains("^Unnamed")]
+
+# 3. Identify Target Column
+target_col = next(
+    (col for col in data.columns
+     if col.strip().lower() == "lung_cancer"),
+    None
+)
+
+if target_col is None:
+    raise ValueError("Target column 'LUNG_CANCER' not found.")
+
+# 4. Prepare Target Variable
+y = data[target_col].astype(str).str.strip().str.upper()
+
+y = y.map({
+    "YES": 1,
+    "NO": 0
+})
+
+if y.isna().any():
+    raise ValueError("Target must contain YES and NO values.")
+
+X = data.drop(columns=[target_col])
+
+# Convert numeric-looking columns to numeric
+for col in X.columns:
+    converted = pd.to_numeric(X[col], errors="coerce")
+    if converted.notna().sum() > 0:
+        X[col] = converted
+
+# Identify numerical and categorical columns
+numeric_cols = X.select_dtypes(include=np.number).columns.tolist()
+categorical_cols = X.select_dtypes(exclude=np.number).columns.tolist()
+
+# 5. Preprocessing
+numeric_pipeline = Pipeline([
+    ("imputer", SimpleImputer(strategy="median")),
+    ("scaler", StandardScaler())
+])
+
+categorical_pipeline = Pipeline([
+    ("imputer", SimpleImputer(strategy="most_frequent")),
+    ("encoder", OneHotEncoder(handle_unknown="ignore"))
+])
+
+preprocessor = ColumnTransformer([
+    ("num", numeric_pipeline, numeric_cols),
+    ("cat", categorical_pipeline, categorical_cols)
+])
+
+# 6. Split Dataset
+X_train, X_test, y_train, y_test = train_test_split(
+    X,
+    y,
+    test_size=0.20,
+    random_state=42,
+    stratify=y
+)
+
+# 7. Create SVM Model
+model = Pipeline([
+    ("preprocessing", preprocessor),
+    ("classifier", SVC(kernel="rbf", C=1.0, gamma="scale"))
+])
+
+# 8. Train Model
+model.fit(X_train, y_train)
+
+print("\nModel Training Completed Successfully!")
+
+# 9. Make Predictions
+y_pred = model.predict(X_test)
+
+# 10. Evaluate Model
+accuracy = accuracy_score(y_test, y_pred)
+
+print("\nModel Accuracy:", round(accuracy * 100, 2), "%")
+
+print("\nClassification Report:")
+print(classification_report(
+    y_test,
+    y_pred,
+    target_names=["No Lung Cancer", "Lung Cancer"],
+    zero_division=0
+))
+
+# 11. Confusion Matrix
+cm = confusion_matrix(y_test, y_pred)
+
+plt.figure(figsize=(6, 4))
+sns.heatmap(
+    cm,
+    annot=True,
+    fmt="d",
+    cmap="Blues",
+    xticklabels=["No Lung Cancer", "Lung Cancer"],
+    yticklabels=["No Lung Cancer", "Lung Cancer"]
+)
+
+plt.xlabel("Predicted")
+plt.ylabel("Actual")
+plt.title("Lung Cancer Prediction - SVM")
+plt.tight_layout()
+plt.show()
+
+# 12. Prediction Example
+sample = X_test.iloc[[0]]
+prediction = model.predict(sample)[0]
+
+print("\nSample Prediction:")
+
+if prediction == 1:
+    print("Predicted Class: Lung Cancer")
+else:
+    print("Predicted Class: No Lung Cancer")
