@@ -1,147 +1,198 @@
 
-# Lung Cancer Prediction Using Machine Learning
-# Algorithm: Support Vector Machine (SVM)
+# LUNG CANCER PREDICTION USING MACHINE LEARNING
 
+# 1. Import Libraries
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
-from sklearn.compose import ColumnTransformer
-from sklearn.pipeline import Pipeline
-from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import make_pipeline
+
+from sklearn.linear_model import LogisticRegression
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier, BaggingClassifier
 from sklearn.svm import SVC
+from sklearn.naive_bayes import GaussianNB
+
 from sklearn.metrics import (
     accuracy_score,
-    classification_report,
-    confusion_matrix
+    confusion_matrix,
+    precision_score,
+    recall_score,
+    f1_score,
+    classification_report
 )
 
-# 1. Load Dataset
-data = pd.read_csv("dataset/lung_cancer.csv")
+# 2. Import Dataset
+lung_data = pd.read_csv("survey_lung_cancer.csv")
 
-print("Dataset Loaded Successfully")
-print(data.head())
+print("Dataset Imported Successfully!")
+print(lung_data.head())
 
-# 2. Clean Column Names
-data.columns = data.columns.str.strip()
-
-# Remove unnecessary index columns
-data = data.loc[:, ~data.columns.str.contains("^Unnamed")]
-
-# 3. Identify Target Column
-target_col = next(
-    (col for col in data.columns
-     if col.strip().lower() == "lung_cancer"),
-    None
+# 3. Clean Column Names
+lung_data.columns = (
+    lung_data.columns.str.strip()
+    .str.upper()
+    .str.replace(" ", "_")
 )
 
-if target_col is None:
-    raise ValueError("Target column 'LUNG_CANCER' not found.")
+# 4. Convert Gender into Numbers
+lung_data["GENDER"] = lung_data["GENDER"].map({
+    "M": 1,
+    "F": 0
+})
 
-# 4. Prepare Target Variable
-y = data[target_col].astype(str).str.strip().str.upper()
-
-y = y.map({
+# 5. Convert Target into Numbers
+lung_data["LUNG_CANCER"] = lung_data["LUNG_CANCER"].map({
     "YES": 1,
     "NO": 0
 })
 
-if y.isna().any():
-    raise ValueError("Target must contain YES and NO values.")
+# 6. Separate Input and Output
+X = lung_data.drop("LUNG_CANCER", axis=1)
+y = lung_data["LUNG_CANCER"]
 
-X = data.drop(columns=[target_col])
+# Convert categorical features into numeric columns if needed
+X = pd.get_dummies(X, drop_first=True)
 
-# Convert numeric-looking columns to numeric
-for col in X.columns:
-    converted = pd.to_numeric(X[col], errors="coerce")
-    if converted.notna().sum() > 0:
-        X[col] = converted
+# Handle missing values
+X = X.fillna(X.median())
 
-# Identify numerical and categorical columns
-numeric_cols = X.select_dtypes(include=np.number).columns.tolist()
-categorical_cols = X.select_dtypes(exclude=np.number).columns.tolist()
-
-# 5. Preprocessing
-numeric_pipeline = Pipeline([
-    ("imputer", SimpleImputer(strategy="median")),
-    ("scaler", StandardScaler())
-])
-
-categorical_pipeline = Pipeline([
-    ("imputer", SimpleImputer(strategy="most_frequent")),
-    ("encoder", OneHotEncoder(handle_unknown="ignore"))
-])
-
-preprocessor = ColumnTransformer([
-    ("num", numeric_pipeline, numeric_cols),
-    ("cat", categorical_pipeline, categorical_cols)
-])
-
-# 6. Split Dataset
+# 7. Split Dataset
 X_train, X_test, y_train, y_test = train_test_split(
-    X,
-    y,
-    test_size=0.20,
+    X, y,
+    test_size=0.2,
     random_state=42,
     stratify=y
 )
 
-# 7. Create SVM Model
-model = Pipeline([
-    ("preprocessing", preprocessor),
-    ("classifier", SVC(kernel="rbf", C=1.0, gamma="scale"))
-])
+# 8. Create Machine Learning Models
+models = {
+    "Logistic Regression": make_pipeline(
+        StandardScaler(), LogisticRegression(max_iter=1000)
+    ),
 
-# 8. Train Model
-model.fit(X_train, y_train)
+    "KNN": make_pipeline(
+        StandardScaler(), KNeighborsClassifier(n_neighbors=5)
+    ),
 
-print("\nModel Training Completed Successfully!")
+    "Decision Tree": DecisionTreeClassifier(random_state=42),
 
-# 9. Make Predictions
-y_pred = model.predict(X_test)
+    "Random Forest": RandomForestClassifier(
+        n_estimators=100, random_state=42
+    ),
 
-# 10. Evaluate Model
-accuracy = accuracy_score(y_test, y_pred)
+    "Bagging Classifier": BaggingClassifier(
+        n_estimators=50, random_state=42
+    ),
 
-print("\nModel Accuracy:", round(accuracy * 100, 2), "%")
+    "SVM": make_pipeline(
+        StandardScaler(), SVC(kernel="linear")
+    ),
 
-print("\nClassification Report:")
-print(classification_report(
-    y_test,
-    y_pred,
-    target_names=["No Lung Cancer", "Lung Cancer"],
-    zero_division=0
+    "Gaussian Naive Bayes": make_pipeline(
+        StandardScaler(), GaussianNB()
+    )
+}
+
+# 9. Train and Test All Models
+results = []
+
+for name, model in models.items():
+
+    model.fit(X_train, y_train)
+
+    prediction = model.predict(X_test)
+
+    accuracy = accuracy_score(y_test, prediction)
+    precision = precision_score(
+        y_test, prediction, zero_division=0
+    )
+    recall = recall_score(
+        y_test, prediction, zero_division=0
+    )
+    f1 = f1_score(
+        y_test, prediction, zero_division=0
+    )
+
+    results.append([
+        name,
+        accuracy * 100,
+        precision,
+        recall,
+        f1
+    ])
+
+    print("\nModel:", name)
+    print("Accuracy:", round(accuracy * 100, 2), "%")
+    print(classification_report(
+        y_test, prediction, zero_division=0
+    ))
+
+# 10. Compare Model Performance
+results_df = pd.DataFrame(
+    results,
+    columns=[
+        "Algorithm",
+        "Accuracy",
+        "Precision",
+        "Recall",
+        "F1 Score"
+    ]
+)
+
+print("\nMODEL COMPARISON")
+print(results_df.sort_values(
+    by="Accuracy", ascending=False
 ))
 
-# 11. Confusion Matrix
-cm = confusion_matrix(y_test, y_pred)
+# 11. Accuracy Graph
+plt.figure(figsize=(10, 5))
+
+sns.barplot(
+    data=results_df,
+    x="Algorithm",
+    y="Accuracy"
+)
+
+plt.title("Comparison of Machine Learning Algorithms")
+plt.ylabel("Accuracy (%)")
+plt.xlabel("Algorithms")
+plt.xticks(rotation=45)
+plt.tight_layout()
+plt.show()
+
+# 12. Select Best Performing Model
+best_name = results_df.loc[
+    results_df["Accuracy"].idxmax(), "Algorithm"
+]
+
+best_model = models[best_name]
+best_prediction = best_model.predict(X_test)
+
+print("\nBest Performing Model:", best_name)
+
+# 13. Confusion Matrix
+cm = confusion_matrix(y_test, best_prediction)
 
 plt.figure(figsize=(6, 4))
+
 sns.heatmap(
     cm,
     annot=True,
     fmt="d",
     cmap="Blues",
-    xticklabels=["No Lung Cancer", "Lung Cancer"],
-    yticklabels=["No Lung Cancer", "Lung Cancer"]
+    xticklabels=["No Cancer", "Cancer"],
+    yticklabels=["No Cancer", "Cancer"]
 )
 
+plt.title("Confusion Matrix - " + best_name)
 plt.xlabel("Predicted")
 plt.ylabel("Actual")
-plt.title("Lung Cancer Prediction - SVM")
-plt.tight_layout()
 plt.show()
 
-# 12. Prediction Example
-sample = X_test.iloc[[0]]
-prediction = model.predict(sample)[0]
-
-print("\nSample Prediction:")
-
-if prediction == 1:
-    print("Predicted Class: Lung Cancer")
-else:
-    print("Predicted Class: No Lung Cancer")
+print("\nProject Completed Successfully!")
